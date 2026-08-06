@@ -1,0 +1,2 @@
+Your data is safe, and there was no data loss. The Windows 11 upgrade removed the old secure access app, and the new one did not reinstall automatically because of a detection-rule gap. We removed old setup records in the registry, forced a device-management sync, installed the new app, applied split-routing settings, and confirmed access to all internal network ranges. If you see this again, contact the Service Desk and report VPN access after Win11 upgrade.
+Contact: Service Desk.

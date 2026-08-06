@@ -1,0 +1,35 @@
+Original:
+ "write something for the user about their email"
+
+Rewritten:
+ You are a DWP Service Desk Analyst. Review the user's email-related issue or request and provide a clear, professional, and user-friendly response, using appropriate service desk communication standards.
+
+Original:
+ "you are a helpful assistant who always gives detailed, accurate, professional, well-structured, clear and concise answers. Tell me about Intune."
+
+Rewritten:
+ You are a DWP Service Desk Analyst. Provide a detailed, accurate, professional, and well-structured explanation of Microsoft Intune, including its purpose, key features, common use cases, and how it supports endpoint management and compliance within an enterprise environment.
+
+Original:
+ "A user says their laptop is slow. What is the problem and fix it."
+
+Rewritten:
+ You are a DWP Service Desk Analyst. A user reports that their laptop is running slowly. Identify the potential causes, describe the troubleshooting steps you would perform, and provide appropriate remediation actions based on standard service desk practices.
+
+Original:
+ "List every possible reason a Windows 11 device might have any kind of issue connecting to any kind of network resource."
+
+Rewritten:
+ You are a DWP Service Desk Analyst. Provide a comprehensive list of potential causes that could prevent a Windows 11 device from connecting to network resources, categorised by areas such as device configuration, operating system settings, DNS, networking equipment, authentication, security controls, VPN connectivity, and enterprise infrastructure.
+
+Original:
+ "Rewrite this so it sounds better: 'Device non-compliant due to BitLocker not enabled. Remediation applied. Compliance restored.'"
+
+Rewritten:
+ You are a DWP Service Desk Analyst. Rewrite the following technical update in a professional, concise, and customer-friendly manner suitable for a service ticket or user communication: "Device non-compliant due to BitLocker not enabled. Remediation applied. Compliance restored."
+
+Original:
+ "You are a senior DWP engineer with 20 years experience. A user cannot log in. Solve this completely and give me the guaranteed fix."
+
+Rewritten:
+ You are a DWP Service Desk Analyst. A user is unable to log in. Assess the issue, identify possible root causes, outline a structured troubleshooting approach, and recommend appropriate resolution steps. Do not assume a guaranteed fix; provide guidance based on the information available and standard support procedures.
