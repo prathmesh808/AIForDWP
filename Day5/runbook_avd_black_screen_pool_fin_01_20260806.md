@@ -1,474 +1,262 @@
-# Title: AVD Black Screen on POOL-FIN-01 After Image Update
-# Version: 1.0
-# Date: 07/08/2026
-# Author: Sathishbabu
-# Reviewed: self
-# Status: draft
-# Change: initial version from RCA
+# Runbook: AVD Black Screen — POOL-FIN-01 Graphics Stack Regression
+ Engineers  
+**Reference RCA:** `Day3\rca_avd_black_screen_pool_fin_01_20260806.md`
 
-Audience: DWP engineers responding to Azure Virtual Desktop incidents  
-Scenario: Users logging in to POOL-FIN-01 see a black screen, experience delayed desktop load, or disconnect shortly after logon.
+---
 
 ## 1. Prerequisites
 
-- [ ] Azure portal access is confirmed for `Azure Virtual Desktop`, `Virtual machines`, and the resource group that contains `POOL-FIN-01` and `POOL-FIN-02`.
-- [ ] Local administrator rights on affected session hosts are confirmed. Required for steps marked `[Elevated]`.
-- [ ] Access to one approved remote administration path is confirmed: `Azure portal > Virtual machines > Connect`, Azure Bastion, or the approved admin RDP path.
-- [ ] Access to Event Viewer on affected session hosts is confirmed.
-- [ ] Access to the team image management console for `POOL-FIN-01` is confirmed.
-- [ ] The exact name of the current `POOL-FIN-01` image version is recorded.
-- [ ] The exact name of the last known-good `POOL-FIN-01` image version is recorded.
-- [ ] The approved graphics mitigation package is available before work starts.
-- [ ] The approved rollback image version is available before work starts.
-- [ ] Access to the unaffected comparison pool `POOL-FIN-02` is confirmed.
-- [ ] A maintenance approval or incident manager approval to drain hosts and reboot hosts is confirmed.
-- [ ] A test user account that is licensed for the finance desktop/application assignment is confirmed.
+Confirm every item below before starting. Do not proceed if any item is missing.
 
-### Mandatory Information From The End User
+### Access
+- [ ] **[ELEVATED]** AVD Host Pool Contributor role (or higher) on POOL-FIN-01 in Azure portal — needed to set drain mode
+- [ ] **[ELEVATED]** Local Administrator on POOL-FIN-01 session hosts — needed to apply registry mitigation and restart hosts
+- [ ] **[ELEVATED]** Access to the image management pipeline / image console — needed for permanent remediation
+- [ ] RDP or Azure Bastion access to individual session hosts (e.g. SHFIN-01-A)
+- [ ] Read access to Windows Event Viewer on affected session hosts
 
-- [ ] Affected user UPN or `DOMAIN\username` is recorded.
-- [ ] Exact time the black screen was first seen is recorded with time zone.
-- [ ] Whether the black screen recovered by itself is recorded.
-- [ ] If recovery occurred, the approximate wait time before recovery is recorded.
-- [ ] Whether the session disconnected automatically is recorded.
-- [ ] Whether the issue happens on every sign-in or only some sign-ins is recorded.
-- [ ] Whether the user can reconnect and eventually get a desktop is recorded.
-- [ ] Whether other users in the same finance pool are affected is recorded.
-- [ ] A screenshot or photo of the black screen is attached if the user can provide one.
-- [ ] The user device type and connection method are recorded.
-- [ ] The host pool name shown to the user or the affected session host name is recorded if available.
-- [ ] The user confirms whether the issue started after the overnight image update window.
+### Tools
+- Azure portal (https://portal.azure.com) — AVD Host Pool and VM management
+- Remote Desktop client or Azure Bastion — direct session host access
+- Windows Event Viewer — built into session host OS
+- PowerShell (Run as Administrator) on session host — for registry changes and restarts
 
-### Mandatory Information From Monitoring Or Service Desk
+### Information to Have Ready
+- Name of the affected pool: **POOL-FIN-01**
+- Name of the healthy comparison pool: **POOL-FIN-02**
+- At least one affected session host name (e.g. SHFIN-01-A) — from Azure portal > AVD > Host Pools > POOL-FIN-01 > Session Hosts
+- The **previous known-good image version** tag for POOL-FIN-01 — from your image deployment log (needed for rollback)
 
-- [ ] List of affected `POOL-FIN-01` session hosts is recorded.
-- [ ] Current active session count on `POOL-FIN-01` is recorded.
-- [ ] Current active session count on `POOL-FIN-02` is recorded.
-- [ ] The first host and first timestamp where the crash pattern was observed are recorded.
-- [ ] Any recent image, driver, or host maintenance change on `POOL-FIN-01` is recorded.
+### When to Use This Runbook
+Use this runbook when **all three** of the following are true:
+1. POOL-FIN-01 users report black screen immediately after login
+2. Symptom began after an overnight image update to POOL-FIN-01
+3. POOL-FIN-02 users are unaffected
+
+---
 
 ## 2. Procedure
 
-1. Open `https://portal.azure.com` in a browser.
-Expected result: The Azure portal sign-in page or home page opens.
+### Phase A — Confirm the Root Cause (Do Not Skip)
 
-2. Open `Azure Virtual Desktop` from the Azure portal search bar.
-Expected result: The Azure Virtual Desktop service page opens.
+**Step 1.** In the Azure portal, go to **Azure Virtual Desktop → Host Pools → POOL-FIN-01 → Session Hosts** and note the name of at least one affected host (e.g. SHFIN-01-A).  
+*Expected: You have at least one host name to work with.*
 
-3. Select `Host pools` in the left navigation pane.
-Expected result: The host pool list opens.
+**Step 2.** Connect to the affected host (e.g. SHFIN-01-A) via Azure Bastion or RDP using your admin account.  
+*Expected: You have a PowerShell or desktop session on the host.*
 
-4. Select the host pool `POOL-FIN-01`.
-Expected result: The `POOL-FIN-01` host pool overview page opens.
+**Step 3.** On the affected host, open **Event Viewer → Windows Logs → Application**. Filter for **Event ID 1000** in the last 4 hours.  
+*Expected: You see at least one entry where `Faulting application name` = `dwm.exe` AND `Faulting module name` = `igdumd64.dll` with exception code `0xc0000005`.*
 
-5. Select `Session hosts` under the `Manage` section for `POOL-FIN-01`.
-Expected result: The `POOL-FIN-01` session host list opens.
+**Step 4.** In the same Event Viewer session, go to **Windows Logs → Application** and filter for **Event ID 9009** (source: Desktop Window Manager) in the same 4-hour window.  
+*Expected: Multiple Event 9009 entries, timestamped within seconds of the Event 1000 entries from Step 3.*
 
-6. Record the name of each session host that shows `Available` or an active session count greater than `0`.
-Expected result: You have the exact list of hosts that are candidates for containment and validation.
+**Step 5.** Connect to the **unaffected comparison host** SHFIN-02-A (from POOL-FIN-02) via Azure Bastion or RDP. Open Event Viewer and check for Event ID 1000 with `dwm.exe` / `igdumd64.dll` in the same 4-hour window.  
+*Expected: No matching Event 1000 entries. If SHFIN-02-A also shows crashes — **stop**, do not continue, escalate to L3 as this is a different incident.*
 
-7. Select `Host pools` again in the Azure Virtual Desktop service page.
-Expected result: The host pool list opens.
+> **Decision gate:** Only continue to Phase B if Steps 3–4 confirmed the crash pattern on POOL-FIN-01 **and** Step 5 confirmed POOL-FIN-02 is clean.
 
-8. Select the host pool `POOL-FIN-02`.
-Expected result: The `POOL-FIN-02` host pool overview page opens.
+---
 
-9. Select `Session hosts` under the `Manage` section for `POOL-FIN-02`.
-Expected result: The `POOL-FIN-02` session host list opens.
+### Phase B — Containment (Stop New Users Hitting Broken Hosts)
 
-10. Confirm that at least one `POOL-FIN-02` host shows `Available` and can accept redirected users.
-Expected result: You have confirmed there is healthy comparison capacity before draining `POOL-FIN-01`.
+> **[ELEVATED]** Steps 6–8 require AVD Host Pool Contributor role.
 
-11. Return to `Azure Virtual Desktop > Host pools > POOL-FIN-01 > Session hosts`.
-Expected result: The affected pool session host list is visible again.
+**Step 6.** In the Azure portal, go to **Azure Virtual Desktop → Host Pools → POOL-FIN-01 → Session Hosts**. Click the first affected host → **Settings** → set **Allow new sessions** to **No** → click **Save**.  
+*Expected: The host shows drain mode active; no new sessions will be routed to it.*
 
-12. Select the first affected session host in the `POOL-FIN-01` list. `[Elevated]`
-Expected result: The session host details page opens.
+**Step 7.** Repeat Step 6 for every remaining session host in POOL-FIN-01.  
+*Expected: All POOL-FIN-01 hosts have "Allow new sessions = No".*
 
-13. Select `No` for `Allow new sessions` on the session host details page. `[Elevated]`
-Expected result: The host enters drain mode and stops accepting new user sessions.
+**Step 8.** In the Azure portal, go to **Azure Virtual Desktop → Host Pools → POOL-FIN-02 → Session Hosts** and confirm at least one host shows **Status = Available** and **Allow new sessions = Yes**.  
+*Expected: POOL-FIN-02 can receive redirected users. If it cannot, stop and contact the AVD capacity team before proceeding.*
 
-14. Select `Save` on the session host details page. `[Elevated]`
-Expected result: Azure confirms the session host settings were updated successfully.
+**Step 9.** Send the following message to affected users via Teams or email:  
+> "We are aware of a login issue with the Finance AVD environment. Please disconnect and reconnect — you will be routed to a stable session. Apologies for the disruption."  
+*Expected: Users are informed and will attempt reconnection to POOL-FIN-02.*
 
-15. Repeat the drain change for each additional affected `POOL-FIN-01` session host. `[Elevated]`
-Expected result: All unstable hosts are in drain mode.
+---
 
-16. Select `User sessions` under the `Monitor` section for `POOL-FIN-01`.
-Expected result: The current session list for the affected pool opens.
+### Phase C — Mitigation (Software Rendering Bypass Per Host)
 
-17. Confirm that no new sessions are being assigned to drained `POOL-FIN-01` hosts.
-Expected result: New sessions are no longer landing on the hosts placed in drain mode.
+> Apply to each POOL-FIN-01 host individually. This bypasses the faulty Intel hardware acceleration path without a full image rollback.
 
-18. Open `Virtual machines` from the Azure portal search bar.
-Expected result: The Azure virtual machine list opens.
+> **[ELEVATED]** Steps 10–13 require local Administrator on the session host.
 
-19. Select the virtual machine that matches the first affected `POOL-FIN-01` session host name. `[Elevated]`
-Expected result: The VM overview page opens.
+**Step 10.** Connect to the first drained POOL-FIN-01 host (e.g. SHFIN-01-A) via Azure Bastion or RDP using your admin account.  
+*Expected: You have an administrative session on the host.*
 
-20. Select `Connect` on the VM toolbar. `[Elevated]`
-Expected result: The available connection methods open.
+**Step 11.** Open **PowerShell as Administrator** on the host and run:
 
-21. Select the approved connection method for your environment. `[Elevated]`
-Expected result: The connection workflow for the target VM opens.
+```powershell
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AEDEBUG" `
+    -Name "DisableHWAcceleration" -Value 1 -Type DWord -Force
+```
 
-22. Sign in to the session host with a local administrator or approved privileged account. `[Elevated]`
-Expected result: You have an administrative session on the affected host.
+*Expected: Command completes with no error output.*
 
-23. Open `Event Viewer` from the Start menu on the affected host. `[Elevated]`
-Expected result: Event Viewer opens.
+**Step 12.** Verify the key was written by running:
 
-24. Expand `Windows Logs` in the Event Viewer left pane. `[Elevated]`
-Expected result: The standard Windows logs are visible.
+```powershell
+Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AEDEBUG" `
+    -Name "DisableHWAcceleration"
+```
 
-25. Select `Application` under `Windows Logs`. `[Elevated]`
-Expected result: The Application log opens.
+*Expected: Output shows `DisableHWAcceleration : 1`.*
 
-26. Select `Filter Current Log...` in the right `Actions` pane. `[Elevated]`
-Expected result: The Application log filter dialog opens.
+**Step 13.** Restart the host:
 
-27. Enter `1000` in the `Includes/Excludes Event IDs` field. `[Elevated]`
-Expected result: The filter is ready to show Application Error events only.
+```powershell
+Restart-Computer -Force
+```
 
-28. Select `OK` in the filter dialog. `[Elevated]`
-Expected result: The Application log shows only `Event ID 1000` entries.
+*Expected: Host reboots. Wait 2–3 minutes before connecting again.*
 
-29. Open the most recent `Event ID 1000` created during the affected user sign-in window. `[Elevated]`
-Expected result: The event details pane opens.
+**Step 14.** After the host is back online, connect a test session using your **standard (non-admin) test account**.  
+*Expected: Desktop loads fully within 30 seconds. No black screen.*
 
-30. Confirm that `Faulting application name` is `dwm.exe` in the event details. `[Elevated]`
-Expected result: The event matches the expected Desktop Window Manager crash pattern.
+**Step 15.** On the host, open **Event Viewer → Windows Logs → Application** and confirm there are **no new Event ID 1000** entries for `dwm.exe` / `igdumd64.dll` since the reboot.  
+*Expected: Zero matching crash events post-reboot.*
 
-31. Confirm that `Faulting module name` is `igdumd64.dll` in the event details. `[Elevated]`
-Expected result: The event matches the Intel graphics regression signature.
+**Step 16.** In the Azure portal, go to **Azure Virtual Desktop → Host Pools → POOL-FIN-01 → Session Hosts** → click the host → **Settings** → set **Allow new sessions** to **Yes** → click **Save**.  
+*Expected: Host is returned to rotation and accepting new sessions.*
 
-32. Expand `Applications and Services Logs` in the Event Viewer left pane. `[Elevated]`
-Expected result: The application and service log tree opens.
+**Step 17.** Repeat Steps 10–16 for each remaining POOL-FIN-01 session host, one at a time.  
+*Expected: All POOL-FIN-01 hosts are back online with the software rendering mitigation applied.*
 
-33. Browse to `Applications and Services Logs > Microsoft > Windows > Desktop Window Manager-Operational`. `[Elevated]`
-Expected result: The DWM operational log opens.
+---
 
-34. Select `Filter Current Log...` in the right `Actions` pane for the DWM log. `[Elevated]`
-Expected result: The DWM log filter dialog opens.
+### Phase D — Permanent Remediation (Image Correction)
 
-35. Enter `9009` in the `Includes/Excludes Event IDs` field. `[Elevated]`
-Expected result: The filter is ready to show DWM exit events only.
+> **[ELEVATED]** Requires access to the image management pipeline.
 
-36. Select `OK` in the filter dialog. `[Elevated]`
-Expected result: The DWM log shows only `Event ID 9009` entries.
+**Step 18.** Raise a task with the **EUC Platform/Image Team** and provide: (a) the exact image version deployed overnight to POOL-FIN-01, and (b) the previous known-good image version. Request identification of the graphics driver change between versions.  
+*Expected: Image Team confirms the specific Intel graphics driver package introduced in the update.*
 
-37. Confirm that a `9009` event exists within the same time window as the `dwm.exe` application crash. `[Elevated]`
-Expected result: You have matched the DWM exit to the user impact window.
+**Step 19.** The Image Team rebuilds the POOL-FIN-01 image, reverting to the last known-good Intel graphics driver or applying a validated replacement. Do not proceed until the Image Team confirms the new image is ready.  
+*Expected: A new corrected image version is available in the image pipeline.*
 
-38. Browse to `Applications and Services Logs > Microsoft > Windows > TerminalServices-LocalSessionManager > Operational`. `[Elevated]`
-Expected result: The Local Session Manager operational log opens.
+**Step 20.** The Image Team runs pre-production smoke tests on the corrected image: fresh logon, reconnect, idle resume, Teams/video render, Office launch. Confirm zero Event 1000 (dwm.exe + igdumd64.dll) entries during testing.  
+*Expected: All smoke tests pass with no DWM crashes.*
 
-39. Select `Filter Current Log...` in the right `Actions` pane for the Local Session Manager log. `[Elevated]`
-Expected result: The Local Session Manager filter dialog opens.
+**Step 21.** Deploy the corrected image to **one POOL-FIN-01 host only** (canary). Perform the verification checks in Section 3 (V1–V4) on that host before continuing.  
+*Expected: Canary host passes all verification checks.*
 
-40. Enter `21,40` in the `Includes/Excludes Event IDs` field. `[Elevated]`
-Expected result: The filter is ready to show only logon success and disconnect events.
+**Step 22.** Deploy the corrected image to the remaining POOL-FIN-01 hosts one at a time, verifying each host after deployment before moving to the next.  
+*Expected: All POOL-FIN-01 hosts running the corrected image.*
 
-41. Select `OK` in the filter dialog. `[Elevated]`
-Expected result: The Local Session Manager log shows only `Event ID 21` and `Event ID 40` entries.
+**Step 23.** On each host now running the corrected image, open **PowerShell as Administrator** and remove the temporary mitigation registry key:
 
-42. Confirm that the affected user has an `Event ID 21` followed by an `Event ID 40` in the same incident window. `[Elevated]`
-Expected result: You have confirmed the logon-success followed by disconnect sequence.
+```powershell
+Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AEDEBUG" `
+    -Name "DisableHWAcceleration" -ErrorAction SilentlyContinue
+```
 
-43. Open `Device Manager` from the Start menu on the affected host. `[Elevated]`
-Expected result: Device Manager opens.
+*Expected: Command completes with no error.*
 
-44. Expand `Display adapters` in Device Manager. `[Elevated]`
-Expected result: The installed graphics adapter list is visible.
+**Step 24.** Restart each host after removing the mitigation key (run `Restart-Computer -Force` in an elevated PowerShell session and wait 2–3 minutes).  
+*Expected: Host reboots onto the corrected image with hardware acceleration active.*
 
-45. Open the properties of the active Intel display adapter. `[Elevated]`
-Expected result: The adapter properties dialog opens.
-
-46. Select the `Driver` tab in the adapter properties dialog. `[Elevated]`
-Expected result: The installed driver version and driver date are visible.
-
-47. Record the installed driver version and driver date from the `Driver` tab. `[Elevated]`
-Expected result: The current graphics driver baseline for the host is documented.
-
-48. Compare the recorded driver version with the last known-good image baseline recorded in the prerequisites.
-Expected result: You know whether the host is using the regressed graphics stack.
-
-49. Open the approved remote administration console or package location that contains the approved graphics mitigation package for this incident. `[Elevated]`
-Expected result: The exact approved mitigation package is available to run.
-
-50. Execute the approved graphics mitigation package on the affected host. `[Elevated]`
-Expected result: The mitigation completes without errors.
-
-51. Restart the affected session host from `Azure portal > Virtual machines > <affected-host> > Overview > Restart`. `[Elevated]`
-Expected result: Azure shows the restart request as submitted and the VM returns online.
-
-52. Sign in to the restarted host with the approved test user account.
-Expected result: The desktop loads without a black screen and the session stays connected.
-
-53. Repeat the mitigation and restart actions for each remaining affected `POOL-FIN-01` session host. `[Elevated]`
-Expected result: Each unstable host is remediated in a controlled wave.
-
-54. Open the team image management console used to publish the `POOL-FIN-01` image. `[Elevated]`
-Expected result: The image publishing console opens.
-
-55. Select the image definition used by `POOL-FIN-01`. `[Elevated]`
-Expected result: The current image versions for the pool are visible.
-
-56. Select the approved corrected image version or create the corrected image version using the validated graphics baseline. `[Elevated]`
-Expected result: A corrected image version is ready for deployment.
-
-57. Deploy the corrected image to one canary session host in `POOL-FIN-01`. `[Elevated]`
-Expected result: One host is updated for controlled validation.
-
-58. Restart the canary host after the corrected image deployment. `[Elevated]`
-Expected result: The canary host returns online on the corrected image.
-
-59. Sign in to the canary host with the approved test user account.
-Expected result: The desktop loads normally and the session remains stable.
-
-60. Review `Windows Logs > Application` for new `Event ID 1000` entries after the canary sign-in. `[Elevated]`
-Expected result: No new `dwm.exe` crash is present after image correction.
-
-61. Review `Applications and Services Logs > Microsoft > Windows > Desktop Window Manager-Operational` for new `Event ID 9009` entries after the canary sign-in. `[Elevated]`
-Expected result: No new DWM exit event is present after image correction.
-
-62. Return to `Azure Virtual Desktop > Host pools > POOL-FIN-01 > Session hosts > <canary-host>`.
-Expected result: The canary session host details page opens.
-
-63. Select `Yes` for `Allow new sessions` on the canary session host details page. `[Elevated]`
-Expected result: The canary host is prepared to accept production sessions again.
-
-64. Select `Save` on the canary session host details page. `[Elevated]`
-Expected result: Azure confirms the canary host settings were updated successfully.
-
-65. Deploy the corrected image to the remaining affected `POOL-FIN-01` session hosts. `[Elevated]`
-Expected result: All affected hosts are updated to the validated image.
-
-66. Set `Allow new sessions` to `Yes` on each remediated session host only after successful host-level validation. `[Elevated]`
-Expected result: Remediated hosts are returned to service one by one.
-
-67. Monitor `Azure Virtual Desktop > Host pools > POOL-FIN-01 > User sessions` for 30 minutes after the last host returns to service.
-Expected result: Users sign in successfully with no new black screen or disconnect pattern.
+---
 
 ## 3. Verification
 
-1. Open `https://portal.azure.com` in a browser.
-Expected result: The Azure portal sign-in page or home page opens.
+Complete **all six checks** before closing the incident. Do not close if any check fails.
 
-2. Open `Azure Virtual Desktop` from the Azure portal search bar.
-Expected result: The Azure Virtual Desktop service page opens.
+**V1.** Log in to POOL-FIN-01 using a **standard test account** (not your admin account). Confirm the desktop loads fully within 30 seconds.  
+*Pass: Desktop visible, no black screen.*
 
-3. Select `Host pools` in the left navigation pane.
-Expected result: The host pool list opens.
+**V2.** Log out, then immediately reconnect with the same test account.  
+*Pass: Reconnect succeeds, no black screen, desktop loads within 30 seconds.*
 
-4. Select the host pool `POOL-FIN-01`.
-Expected result: The `POOL-FIN-01` host pool overview page opens.
+**V3.** On each POOL-FIN-01 session host, open **Event Viewer → Windows Logs → Application** and confirm there are no Event ID 1000 entries for `dwm.exe` in the last 30 minutes.  
+*Pass: Zero matching entries.*
 
-5. Select `Session hosts` under the `Manage` section for `POOL-FIN-01`.
-Expected result: The `POOL-FIN-01` session host list opens.
+**V4.** On each POOL-FIN-01 session host, open **Event Viewer → Applications and Services Logs → Microsoft → Windows → Desktop Window Manager-Operational** and confirm Event ID **9011** (DWM started successfully) is present after the last reboot with no **9009** (DWM exited) after it.  
+*Pass: 9011 present post-reboot, no subsequent 9009.*
 
-6. Confirm that each remediated session host shows `Available` and `Allow new sessions` set to `Yes`.
-Expected result: The pool shows only validated hosts accepting new sessions.
+**V5.** In the Azure portal, go to **Azure Virtual Desktop → Host Pools → POOL-FIN-01 → Session Hosts** and confirm **all hosts** show **Allow new sessions = Yes** and **Status = Available**.  
+*Pass: All hosts fully in rotation.*
 
-7. Select `User sessions` under the `Monitor` section for `POOL-FIN-01`.
-Expected result: The current user session list opens.
+**V6.** Contact at least one user who was affected and confirm they can log in successfully with no black screen.  
+*Pass: User confirms successful login.*
 
-8. Confirm that new user sessions are being created successfully on remediated `POOL-FIN-01` hosts.
-Expected result: The pool is accepting production traffic again.
-
-9. Sign in to `POOL-FIN-01` with the approved test user account.
-Expected result: The desktop opens without a black screen.
-
-10. Disconnect the test user session from the desktop session.
-Expected result: The session disconnect completes without error.
-
-11. Reconnect the same test user to `POOL-FIN-01`.
-Expected result: The desktop reconnects without a black screen or forced disconnect.
-
-12. Open `Virtual machines` from the Azure portal search bar.
-Expected result: The Azure virtual machine list opens.
-
-13. Select the first remediated session host VM. `[Elevated]`
-Expected result: The VM overview page opens.
-
-14. Select `Connect` on the VM toolbar. `[Elevated]`
-Expected result: The available connection methods open.
-
-15. Select the approved connection method for your environment. `[Elevated]`
-Expected result: The connection workflow for the target VM opens.
-
-16. Sign in to the session host with a local administrator or approved privileged account. `[Elevated]`
-Expected result: You have an administrative session on the remediated host.
-
-17. Open `Event Viewer` from the Start menu on the remediated host. `[Elevated]`
-Expected result: Event Viewer opens.
-
-18. Browse to `Windows Logs > Application`. `[Elevated]`
-Expected result: The Application log opens.
-
-19. Select `Filter Current Log...` in the right `Actions` pane. `[Elevated]`
-Expected result: The Application log filter dialog opens.
-
-20. Enter `1000` in the `Includes/Excludes Event IDs` field. `[Elevated]`
-Expected result: The filter is ready to show Application Error events only.
-
-21. Select `OK` in the filter dialog. `[Elevated]`
-Expected result: The Application log shows only `Event ID 1000` entries.
-
-22. Confirm that no new `Event ID 1000` event exists after remediation where `Faulting application name` is `dwm.exe` and `Faulting module name` is `igdumd64.dll`. `[Elevated]`
-Expected result: No new application crash evidence is present after the fix.
-
-23. Browse to `Applications and Services Logs > Microsoft > Windows > Desktop Window Manager-Operational`. `[Elevated]`
-Expected result: The DWM operational log opens.
-
-24. Select `Filter Current Log...` in the right `Actions` pane. `[Elevated]`
-Expected result: The DWM log filter dialog opens.
-
-25. Enter `9009` in the `Includes/Excludes Event IDs` field. `[Elevated]`
-Expected result: The filter is ready to show DWM exit events only.
-
-26. Select `OK` in the filter dialog. `[Elevated]`
-Expected result: The DWM log shows only `Event ID 9009` entries.
-
-27. Confirm that no new `Event ID 9009` entries exist after remediation in the validation window. `[Elevated]`
-Expected result: No new DWM exit evidence is present after the fix.
-
-28. Browse to `Applications and Services Logs > Microsoft > Windows > TerminalServices-LocalSessionManager > Operational`. `[Elevated]`
-Expected result: The Local Session Manager operational log opens.
-
-29. Select `Filter Current Log...` in the right `Actions` pane. `[Elevated]`
-Expected result: The Local Session Manager filter dialog opens.
-
-30. Enter `21,40` in the `Includes/Excludes Event IDs` field. `[Elevated]`
-Expected result: The filter is ready to show only logon success and disconnect events.
-
-31. Select `OK` in the filter dialog. `[Elevated]`
-Expected result: The Local Session Manager log shows only `Event ID 21` and `Event ID 40` entries.
-
-32. Confirm that the test user has a successful `Event ID 21` without a following `Event ID 40` in the same validation window. `[Elevated]`
-Expected result: The test sign-in completed without the previous disconnect pattern.
-
-33. Repeat the log validation on one additional remediated host if more than one host was affected. `[Elevated]`
-Expected result: The fix is confirmed on more than one host before incident closure.
-
-34. Confirm in the service desk queue or incident bridge notes that no new black screen reports were raised during the 30-minute validation window.
-Expected result: User-facing symptoms remain cleared before closure.
-
-35. Confirm that `POOL-FIN-02` did not enter an unhealthy or overloaded state during redirection.
-Expected result: The comparison pool remained stable during recovery.
+---
 
 ## 4. Rollback
 
-1. Open `https://portal.azure.com` in a browser.
-Expected result: The Azure portal sign-in page or home page opens.
+Use this section **immediately** if the mitigation in Phase C makes things worse — for example: hosts become unresponsive after reboot, DWM crashes persist, or new symptoms appear. Every step below is immediately actionable.
 
-2. Open `Azure Virtual Desktop` from the Azure portal search bar.
-Expected result: The Azure Virtual Desktop service page opens.
+> **[ELEVATED]** All rollback steps require AVD Host Pool Contributor and local Administrator access.
 
-3. Select `Host pools` in the left navigation pane.
-Expected result: The host pool list opens.
+**R1.** In the Azure portal, go to **Azure Virtual Desktop → Host Pools → POOL-FIN-01 → Session Hosts**. For each host: click the host → **Settings** → set **Allow new sessions** to **No** → **Save**.  
+*Action: Stops all new users from hitting broken hosts immediately.*
 
-4. Select the host pool `POOL-FIN-01`.
-Expected result: The `POOL-FIN-01` host pool overview page opens.
+**R2.** In the Azure portal, go to **Azure Virtual Desktop → Host Pools → POOL-FIN-02 → Session Hosts** and confirm **Allow new sessions = Yes** on all POOL-FIN-02 hosts.  
+*Action: Ensures users can reconnect to the healthy pool.*
 
-5. Select `Session hosts` under the `Manage` section for `POOL-FIN-01`.
-Expected result: The `POOL-FIN-01` session host list opens.
+**R3.** Send the following message to affected users:  
+> "Finance AVD login issue ongoing. Please connect via POOL-FIN-02 until further notice."  
+*Action: Stops users from retrying POOL-FIN-01.*
 
-6. Select the degraded session host that became worse after mitigation or image remediation. `[Elevated]`
-Expected result: The session host details page opens.
+**R4.** If the software rendering mitigation key (Step 11) caused instability, connect to each affected POOL-FIN-01 host via Azure Bastion and run in an elevated PowerShell session:
 
-7. Select `No` for `Allow new sessions` on the session host details page. `[Elevated]`
-Expected result: The degraded host stops accepting new user sessions.
+```powershell
+Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AEDEBUG" `
+    -Name "DisableHWAcceleration" -ErrorAction SilentlyContinue
+Restart-Computer -Force
+```
 
-8. Select `Save` on the session host details page. `[Elevated]`
-Expected result: Azure confirms the drain setting was saved.
+*Action: Removes the mitigation key and reboots. The host will return to the pre-mitigation black-screen state — keep it drained until image rollback in R5 is complete.*
 
-9. Repeat the drain action for every `POOL-FIN-01` host showing the same unstable behavior. `[Elevated]`
-Expected result: All unstable hosts are blocked from taking new sessions.
+**R5.** Contact the **EUC Platform/Image Team** and request an emergency rollback of POOL-FIN-01 to the **previous known-good image version** (provide the exact version tag you noted in Prerequisites). Do not attempt to re-image hosts yourself without the Image Team.  
+*Action: Initiates controlled image rollback.*
 
-10. Select `User sessions` under the `Monitor` section for `POOL-FIN-01`.
-Expected result: The current user session list opens.
+**R6.** After the Image Team re-images the first host, perform a test logon (V1 from Section 3) before enabling it. Only enable the host if V1 passes.  
+*Action: Validates each host individually before returning to service.*
 
-11. Identify all active users still connected to the degraded hosts.
-Expected result: You know exactly which users are still on unstable hosts.
+**R7.** Once all POOL-FIN-01 hosts are confirmed healthy on the rolled-back image, set **Allow new sessions = Yes** on all of them in the Azure portal.  
+*Action: Returns POOL-FIN-01 to full service.*
 
-12. Instruct each identified user to sign out and reconnect after you confirm alternate capacity is available.
-Expected result: Active users begin moving away from unstable hosts.
+**R8.** Notify users that POOL-FIN-01 is restored and they may reconnect normally.
 
-13. Select `Host pools` again in the Azure Virtual Desktop service page.
-Expected result: The host pool list opens.
+> **Escalation trigger:** If Event ID 1000 (dwm.exe + igdumd64.dll) and Event 9009 still appear after image rollback in R5–R6, escalate immediately to L3 and the EUC Platform team — this is outside the scope of this runbook.
 
-14. Select the host pool `POOL-FIN-02`.
-Expected result: The `POOL-FIN-02` host pool overview page opens.
-
-15. Select `Session hosts` under the `Manage` section for `POOL-FIN-02`.
-Expected result: The `POOL-FIN-02` session host list opens.
-
-16. Confirm that at least one `POOL-FIN-02` host shows `Available` before continuing.
-Expected result: You have confirmed safe landing capacity for redirected users.
-
-17. Stop the rollback procedure here if the immediate goal was containment and user impact is now controlled.
-Expected result: The incident is stabilized within the first few minutes.
-
-18. Open the team image management console used to publish the `POOL-FIN-01` image. `[Elevated]`
-Expected result: The image publishing console opens.
-
-19. Select the image definition used by `POOL-FIN-01`. `[Elevated]`
-Expected result: The current and previous image versions are visible.
-
-20. Disable further deployment of the newly remediated image version. `[Elevated]`
-Expected result: No additional hosts can receive the unstable image.
-
-21. Select the last known-good image version recorded in the prerequisites. `[Elevated]`
-Expected result: The rollback image version is selected.
-
-22. Set the last known-good image version as the active deployment source for `POOL-FIN-01`. `[Elevated]`
-Expected result: The pool is ready to roll back to the stable image.
-
-23. Deploy the last known-good image to one rollback canary host in `POOL-FIN-01`. `[Elevated]`
-Expected result: One host is prepared for rollback validation.
-
-24. Restart the rollback canary host from `Azure portal > Virtual machines > <rollback-canary-host> > Overview > Restart`. `[Elevated]`
-Expected result: Azure shows the restart request as submitted and the host returns online.
-
-25. Sign in to the rollback canary host with the approved test user account.
-Expected result: The desktop loads normally and the session remains stable.
-
-26. Open `Event Viewer` on the rollback canary host. `[Elevated]`
-Expected result: Event Viewer opens.
-
-27. Browse to `Windows Logs > Application`. `[Elevated]`
-Expected result: The Application log opens.
-
-28. Filter the Application log to `Event ID 1000`. `[Elevated]`
-Expected result: The log shows only application crash events.
-
-29. Confirm that no new `dwm.exe` crash with module `igdumd64.dll` occurred after rollback. `[Elevated]`
-Expected result: The rollback image does not reproduce the application crash signature.
-
-30. Browse to `Applications and Services Logs > Microsoft > Windows > Desktop Window Manager-Operational`. `[Elevated]`
-Expected result: The DWM operational log opens.
-
-31. Filter the DWM log to `Event ID 9009`. `[Elevated]`
-Expected result: The log shows only DWM exit events.
-
-32. Confirm that no new `Event ID 9009` exists after rollback validation. `[Elevated]`
-Expected result: The rollback image does not reproduce the DWM exit signature.
-
-33. Deploy the last known-good image to the remaining affected `POOL-FIN-01` hosts only after the canary rollback host passes validation. `[Elevated]`
-Expected result: The affected pool returns to the last stable image in a controlled wave.
-
-34. Set `Allow new sessions` to `Yes` on each rollback host only after sign-in and log validation succeeds. `[Elevated]`
-Expected result: Restored hosts return to service without reintroducing user impact.
-
-35. Escalate to the EUC Platform/Image Team with the failed image version, affected host names, and the exact Application and DWM event timestamps if the rollback canary host also fails. 
-Expected result: Engineering receives the precise evidence needed for deeper image or driver investigation.
+---
 
 ## 5. Notes
 
-- Warning: Do not return a host to service after reboot alone unless you have completed a clean sign-in test and log review.
-- Warning: If `POOL-FIN-02` does not have enough spare capacity, drain only a subset of affected `POOL-FIN-01` hosts at a time to avoid a broader service outage.
-- Edge case: If the user can authenticate but never reaches the shell, continue to treat the incident as a display-composition failure when the `Event ID 21` -> `Event ID 1000` -> `Event ID 9009` -> `Event ID 40` sequence is present.
-- Edge case: If no `igdumd64.dll` faults are present, stop using this runbook and switch to a separate logon failure investigation for FSLogix, shell, AppX, policy, or AVD agent issues.
-- Related incident: Use this runbook together with the known error record in `Day4\known_error_avd_black_screen_pool_fin_01_20260806.md` when the symptom matches.
-- Related incident: The unaffected comparison pool in this incident was `POOL-FIN-02`; if a future incident affects both pools, treat that as a different failure pattern and escalate earlier.
+### Edge Cases
+- **Some users get through, others do not:** This is expected — the crash is non-deterministic per session. Do not assume the pool is healthy because some users logged in. Require full Section 3 verification before clearing the incident.
+- **POOL-FIN-02 at capacity:** If POOL-FIN-02 cannot absorb all redirected users, contact the AVD capacity team to scale out POOL-FIN-02 **before** completing Step 7. Do not drain all of POOL-FIN-01 if there is nowhere for users to go.
+- **Software rendering mitigation not enough:** If Event 1000 (dwm.exe + igdumd64.dll) continues after applying Step 11 and rebooting, do not try additional registry changes. Go directly to image rollback (Section 4, steps R5 onwards).
+- **Multiple pools affected:** If POOL-FIN-02 also starts showing black screens (Step 5 fails), this runbook does not apply. Stop, escalate to L3, and investigate a wider platform or broker issue.
+- **Registry path in Step 11 may not exist:** PowerShell will create it automatically. Always confirm with Step 12 before restarting.
+
+### Warnings
+- **Do not remove drain mode prematurely.** Always complete V1–V4 in Section 3 before setting a host back to "Allow new sessions = Yes".
+- **The software rendering mitigation (Step 11) degrades rendering performance.** It is temporary only. It must be removed (Steps 23–24) once the corrected image is deployed.
+- **Do not apply the image correction (Phase D) without the Image Team's pre-production smoke tests.** Deploying an untested corrected image can introduce new regressions.
+
+### Preventive Controls (For Reference)
+The following controls were added after this incident to prevent recurrence:
+- Mandatory post-image AVD smoke tests before promotion (fresh logon, reconnect, idle resume, Teams/video, Office launch)
+- Deployment blocker: any Event 1000 where process = dwm.exe and module = igdumd64.dll fails image promotion
+- Automated alerting for DWM crash signatures (Event 1000 + Event 9009 correlation) in the first 2 hours after rollout
+- Phased rollout with explicit pause-and-verify checkpoints before each wave
+
+### Related Documents
+- **RCA:** `Day3\rca_avd_black_screen_pool_fin_01_20260806.md`
+- **Closure note:** `Day4\closure_note_avd_black_screen_pool_fin_01_20260806.md`
+- **Known error record:** `Day4\known_error_avd_black_screen_pool_fin_01_20260806.md`
+- **End-user communication template:** `Day4\end_user_communication_avd_black_screen_20260806.md`
+- **Hypothesis log:** `Day4\avd_black_screen_hypothesis_pool_fin_20260806.md`
+
+### Key Event IDs for This Incident
+| Event ID | Log | Source | Meaning |
+|----------|-----|--------|---------|
+| 1000 | Application | Application Error | dwm.exe crash in igdumd64.dll (exception 0xc0000005) |
+| 9009 | DWM-Operational | Desktop Window Manager | DWM terminated unexpectedly |
+| 9011 | DWM-Operational | Desktop Window Manager | DWM started successfully (healthy baseline) |
+| 21 | LSM-Operational | TerminalServices-LocalSessionManager | User session logon succeeded |
+| 40 | LSM-Operational | TerminalServices-LocalSessionManager | User session disconnected |
