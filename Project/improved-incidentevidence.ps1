@@ -53,11 +53,13 @@ $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 $logsDir = Join-Path $WorkingRoot 'Logs'
 $manifestsDir = Join-Path $WorkingRoot 'Manifests'
 $backupsDir = Join-Path $WorkingRoot 'Backups'
+$summariesDir = Join-Path $WorkingRoot 'Summaries'
 
 New-Item -Path $WorkingRoot -ItemType Directory -Force | Out-Null
 New-Item -Path $logsDir -ItemType Directory -Force | Out-Null
 New-Item -Path $manifestsDir -ItemType Directory -Force | Out-Null
 New-Item -Path $backupsDir -ItemType Directory -Force | Out-Null
+New-Item -Path $summariesDir -ItemType Directory -Force | Out-Null
 
 $logPath = Join-Path $logsDir ("tempcleanup_{0}.log" -f $timestamp)
 
@@ -74,6 +76,129 @@ function Write-Log {
     $line = "[{0}] [{1}] {2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Level, $Message
     Write-Host $line
     Add-Content -Path $logPath -Value $line
+}
+
+# ------------------------------
+# Section: Structured summary writer
+# Emits machine-readable JSON and a readable action summary for handoff.
+# ------------------------------
+function Write-StructuredSummary {
+    param(
+        [Parameter(Mandatory=$true)][ValidateSet('Cleanup','Rollback')][string]$Mode,
+        [Parameter(Mandatory=$true)][string]$SummaryId,
+        [Parameter(Mandatory=$true)][datetime]$StartedAtUtc,
+        [Parameter(Mandatory=$true)][datetime]$EndedAtUtc,
+        [Parameter(Mandatory=$true)][string]$WorkingRoot,
+        [Parameter(Mandatory=$true)][string]$LogPath,
+        [string]$ManifestPath,
+        [string]$BackupPath,
+        [int]$Scanned = 0,
+        [int]$Candidates = 0,
+        [int]$DryRunListed = 0,
+        [int]$Moved = 0,
+        [int]$LockedSkipped = 0,
+        [int]$Restored = 0,
+        [int]$Skipped = 0,
+        [int]$Failed = 0,
+        [int]$Errors = 0,
+        [bool]$DryRun = $false,
+        [int]$OlderThanDays = 0,
+        [string[]]$ResolvedTargets = @()
+    )
+
+    $recommendedActions = New-Object System.Collections.Generic.List[string]
+
+    if ($Mode -eq 'Cleanup') {
+        if ($DryRun) {
+            $recommendedActions.Add('Review DryRun rows in the manifest, then run again without -DryRun when approved.') | Out-Null
+        }
+        if ($Errors -gt 0) {
+            $recommendedActions.Add('Open the manifest and filter Status = Error, then remediate paths or permissions before rerun.') | Out-Null
+        }
+        if ($LockedSkipped -gt 0) {
+            $recommendedActions.Add('Close file handles or restart affected apps/endpoints, then rerun cleanup for locked files.') | Out-Null
+        }
+        if ($Moved -gt 0) {
+            $recommendedActions.Add('Retain manifest and backup folder for rollback window; validate user-facing app behavior.') | Out-Null
+        }
+        if ($Candidates -eq 0) {
+            $recommendedActions.Add('No eligible files found; adjust -OlderThanDays or target paths if cleanup was expected.') | Out-Null
+        }
+    }
+    else {
+        if ($Failed -gt 0) {
+            $recommendedActions.Add('Investigate failed restore rows and recover missing backup payloads before rerun.') | Out-Null
+        }
+        if ($Restored -gt 0) {
+            $recommendedActions.Add('Validate restored application behavior and confirm incident closure evidence.') | Out-Null
+        }
+        if ($Skipped -gt 0) {
+            $recommendedActions.Add('Skipped rows are expected for idempotency/non-moved rows; review only if unexpected.') | Out-Null
+        }
+    }
+
+    if ($recommendedActions.Count -eq 0) {
+        $recommendedActions.Add('No immediate follow-up actions required.') | Out-Null
+    }
+
+    $summary = [pscustomobject]@{
+        SummaryId           = $SummaryId
+        Mode                = $Mode
+        StartedAtUtc        = $StartedAtUtc.ToString('o')
+        EndedAtUtc          = $EndedAtUtc.ToString('o')
+        DurationSeconds     = [math]::Round(($EndedAtUtc - $StartedAtUtc).TotalSeconds, 2)
+        WorkingRoot         = $WorkingRoot
+        LogPath             = $LogPath
+        ManifestPath        = $ManifestPath
+        BackupPath          = $BackupPath
+        DryRun              = $DryRun
+        OlderThanDays       = $OlderThanDays
+        Targets             = $ResolvedTargets
+        Counters            = [pscustomobject]@{
+            Scanned         = $Scanned
+            Candidates      = $Candidates
+            DryRunListed    = $DryRunListed
+            Moved           = $Moved
+            LockedSkipped   = $LockedSkipped
+            Restored        = $Restored
+            Skipped         = $Skipped
+            Failed          = $Failed
+            Errors          = $Errors
+        }
+        RecommendedActions  = $recommendedActions
+    }
+
+    $summaryJsonPath = Join-Path $summariesDir ("summary_{0}.json" -f $SummaryId)
+    $summaryTxtPath = Join-Path $summariesDir ("summary_{0}.txt" -f $SummaryId)
+
+    $summary | ConvertTo-Json -Depth 6 | Set-Content -Path $summaryJsonPath -Encoding UTF8
+
+    $actionLines = @()
+    $actionLines += "ACTION SUMMARY"
+    $actionLines += "Mode: $Mode"
+    $actionLines += "SummaryId: $SummaryId"
+    $actionLines += "DurationSeconds: $([math]::Round(($EndedAtUtc - $StartedAtUtc).TotalSeconds, 2))"
+    $actionLines += "ManifestPath: $ManifestPath"
+    $actionLines += "BackupPath: $BackupPath"
+    $actionLines += "LogPath: $LogPath"
+    $actionLines += "Counters: Scanned=$Scanned; Candidates=$Candidates; DryRunListed=$DryRunListed; Moved=$Moved; LockedSkipped=$LockedSkipped; Restored=$Restored; Skipped=$Skipped; Failed=$Failed; Errors=$Errors"
+    $actionLines += "RecommendedActions:"
+    foreach ($action in $recommendedActions) {
+        $actionLines += "- $action"
+    }
+
+    $actionLines | Set-Content -Path $summaryTxtPath -Encoding UTF8
+
+    Write-Log -Message ("Structured summary JSON: {0}" -f $summaryJsonPath)
+    Write-Log -Message ("Structured summary text: {0}" -f $summaryTxtPath)
+
+    Write-Host ''
+    Write-Host '===== ACTION SUMMARY ====='
+    foreach ($line in $actionLines) {
+        Write-Host $line
+    }
+
+    return $summary
 }
 
 # ------------------------------
@@ -136,6 +261,7 @@ function Get-LatestManifestPath {
 # Idempotent: skips files already restored or missing backup payload.
 # ------------------------------
 if ($Rollback) {
+    $rollbackStartUtc = (Get-Date).ToUniversalTime()
     $manifestPath = $RollbackManifest
     if ([string]::IsNullOrWhiteSpace($manifestPath)) {
         $manifestPath = Get-LatestManifestPath -Dir $manifestsDir
@@ -191,6 +317,19 @@ if ($Rollback) {
     }
 
     Write-Log -Message ("Rollback summary -> Restored: {0}, Skipped: {1}, Failed: {2}" -f $restored, $skipped, $failed)
+
+    $null = Write-StructuredSummary -Mode 'Rollback' `
+        -SummaryId ("rollback_{0}" -f $timestamp) `
+        -StartedAtUtc $rollbackStartUtc `
+        -EndedAtUtc ((Get-Date).ToUniversalTime()) `
+        -WorkingRoot $WorkingRoot `
+        -LogPath $logPath `
+        -ManifestPath $manifestPath `
+        -BackupPath '' `
+        -Restored $restored `
+        -Skipped $skipped `
+        -Failed $failed
+
     exit 0
 }
 
@@ -199,6 +338,7 @@ if ($Rollback) {
 # Collects candidate files and either lists (dry run) or moves them to backup.
 # Moving (not permanent delete) enables rollback.
 # ------------------------------
+$cleanupStartUtc = (Get-Date).ToUniversalTime()
 $operationId = Get-Date -Format 'yyyyMMdd_HHmmss'
 $operationBackupDir = Join-Path $backupsDir $operationId
 New-Item -Path $operationBackupDir -ItemType Directory -Force | Out-Null
@@ -315,3 +455,21 @@ Write-Log -Message ("Manifest saved: {0}" -f $manifestPathOut)
 Write-Log -Message ("Summary -> Scanned: {0}, Candidates: {1}, DryRunListed: {2}, Moved: {3}, LockedSkipped: {4}, Errors: {5}" -f $scanned, $candidates, $dryRunCount, $moved, $locked, $errors)
 Write-Log -Message ("Log file: {0}" -f $logPath)
 Write-Log -Message ("Backup folder for this run: {0}" -f $operationBackupDir)
+
+$null = Write-StructuredSummary -Mode 'Cleanup' `
+    -SummaryId ("cleanup_{0}" -f $operationId) `
+    -StartedAtUtc $cleanupStartUtc `
+    -EndedAtUtc ((Get-Date).ToUniversalTime()) `
+    -WorkingRoot $WorkingRoot `
+    -LogPath $logPath `
+    -ManifestPath $manifestPathOut `
+    -BackupPath $operationBackupDir `
+    -Scanned $scanned `
+    -Candidates $candidates `
+    -DryRunListed $dryRunCount `
+    -Moved $moved `
+    -LockedSkipped $locked `
+    -Errors $errors `
+    -DryRun ([bool]$DryRun) `
+    -OlderThanDays $OlderThanDays `
+    -ResolvedTargets $resolvedTargets

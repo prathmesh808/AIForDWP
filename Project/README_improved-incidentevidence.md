@@ -62,6 +62,21 @@ Under `WorkingRoot` (default: `TempCleanupData`):
 - `Logs\tempcleanup_<timestamp>.log`
 - `Manifests\cleanup_manifest_<timestamp>.csv`
 - `Backups\<operationId>\...moved files...`
+- `Summaries\summary_cleanup_<operationId>.json`
+- `Summaries\summary_cleanup_<operationId>.txt`
+- `Summaries\summary_rollback_<timestamp>.json`
+- `Summaries\summary_rollback_<timestamp>.txt`
+
+## Structured Actionable Output
+Each run now emits a structured handoff summary in both JSON and text formats.
+
+- JSON summary is machine-readable for automation/handoff tooling.
+- Text summary is operator-friendly and includes:
+  - mode, duration, manifest path, backup path, and log path
+  - counter totals (scanned, candidates, moved, locked, errors, etc.)
+  - recommended next actions based on run outcome
+
+This makes output actionable for another engineer without parsing raw status logs.
 
 ## Notes
 - Run with elevated rights to maximize coverage of system temp paths.
