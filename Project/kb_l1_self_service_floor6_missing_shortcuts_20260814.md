@@ -4,6 +4,11 @@ Version: v 1.0
 Date: 14/08/2026  
 Status: Draft
 
+## Runbook Source Of Truth
+- Source runbook: runbook_floor6_missing_shortcuts_20260814.md
+- Source version: 1.0
+- Re-expression rule: This L1 article is a plain-language re-expression of runbook-safe user checks and escalation triggers.
+
 If your desktop icons are missing this morning, you are not alone. We know this is affecting some people on Floor 6, and the IT help team is working on it.
 
 Your files and data are safe.

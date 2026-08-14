@@ -3,8 +3,8 @@
 ## Version Header
 - Title: Floor 6 Copilot Unexpected Client Matter Runbook
 - Version: 1.0
-- Date: 07/08/2026
-- Author: Sathishbabu
+- Date: 14/08/2026
+- Author: PrathameshGavade
 - Reviewed: self
 - Status: draft
 - Change: initial version from RCA

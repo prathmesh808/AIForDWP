@@ -4,6 +4,11 @@ Version: v 1.0
 Date: 14/08/2026  
 Status: Draft
 
+## Runbook Source Of Truth
+- Source runbook: runbook_floor6_login_slow_signin_20260814.md
+- Source version: 1.0
+- Re-expression rule: This L1 article is a plain-language re-expression of the same decision path and safe user actions from the runbook.
+
 If login is failing or taking a long time this morning, you are not alone. We know this is affecting multiple people, and the help desk team is actively working on it.
 
 Your files and work data are safe.

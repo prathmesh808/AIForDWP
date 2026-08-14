@@ -4,6 +4,11 @@ Version: v 1.0
 Date: 14/08/2026  
 Status: Draft
 
+## Runbook Source Of Truth
+- Source runbook: runbook_floor6_copilot_unexpected_client_matter_20260814.md
+- Source version: 1.0
+- Re-expression rule: This L2/L3 article is a role-specific re-expression of the same flow in the runbook (prerequisites, detection, resolution, verification, rollback), not a separate procedure.
+
 ## Background
 Copilot responses are grounded on content the signed-in user can access. Access is determined by document permissions, inheritance from parent locations, and group membership. In legal content areas, even small permission drift can expose sensitive matter names or references to the wrong audience. Fast diagnosis matters because this is a confidentiality-risk incident, not only a usability issue.
 
@@ -185,8 +190,8 @@ Target rollback time: under 3 minutes.
 - If fail: block final closure and assign update action to DWP engineer.
 
 ## Related
-- FinalProject/runbook_floor6_copilot_unexpected_client_matter_20260814.md
-- FinalProject/rca_floor6_copilot_unexpected_client_matter_20260814.md
-- FinalProject/floor6_copilot_unexpected_client_matter_detailed_analysis_20260814.md
-- FinalProject/floor6_copilot_unexpected_client_matter_scope_only_hypothesis_20260814.md
-- FinalProject/incident_triage_floor6_copilot_unexpected_client_matter.md
+- runbook_floor6_copilot_unexpected_client_matter_20260814.md
+- rca_floor6_copilot_unexpected_client_matter_20260814.md
+- floor6_copilot_unexpected_client_matter_detailed_analysis_20260814.md
+- floor6_copilot_unexpected_client_matter_scope_only_hypothesis_20260814.md
+- incident_triage_floor6_copilot_unexpected_client_matter.md

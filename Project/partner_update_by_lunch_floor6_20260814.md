@@ -26,5 +26,8 @@ We will complete the remaining review, share final findings, and confirm closure
 
 We are also putting a stricter early-morning readiness checkpoint in place before future business-day starts, so issues of this type are caught before users are impacted.
 
+## Required Reflection 
+One point where my first instinct was wrong: I first thought this might be a Copilot product problem. The evidence did not support that as the main cause. After reviewing the incident summaries and RCA notes, the same pattern appeared each time: this was an access-control problem, meaning permission settings allowed a user to see material they were not expected to see. What changed my mind was the consistency of the evidence across documents: the Copilot analysis ranked permission boundary first, the RCA reached the same conclusion, and the response plan focused on access correction plus retest. That changed the conclusion from "likely product bug" to "security/access signal first; only raise a product-defect case if retesting still shows exposure after access is corrected."
+
 ## Bottom Line
 Business service has been stabilized, risk has been contained, and the remaining sensitive item is under active controlled review.

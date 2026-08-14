@@ -236,6 +236,6 @@ Expected result: Audit trail is complete and handoff-ready.
 - If sign-in failures are widespread across multiple floors at the same time, prioritize tenant or identity service health checks before endpoint remediation.
 - If only slowness remains after successful authentication, assess profile load and post-login initialization separately.
 - Related artifacts:
-  - FinalProject/rca_floor6_login_slow_signin_20260814.md
-  - FinalProject/floor6_login_slow_signin_detailed_analysis_20260814.md
-  - FinalProject/incident_triage_floor6_login_and_slow_signin.md
+  - rca_floor6_login_slow_signin_20260814.md
+  - floor6_login_slow_signin_detailed_analysis_20260814.md
+  - incident_triage_floor6_login_and_slow_signin.md

@@ -4,6 +4,11 @@ Version: v 1.0
 Date: 14/08/2026  
 Status: Draft
 
+## Runbook Source Of Truth
+- Source runbook: runbook_floor6_missing_shortcuts_20260814.md
+- Source version: 1.0
+- Re-expression rule: This L2/L3 article is a role-specific re-expression of the same runbook flow and validation checks, not a separate remediation design.
+
 ## Background
 Windows user desktops are built from two main locations: user desktop folder and public desktop folder. At sign-in, Windows loads the user profile from registry mapping under ProfileList, then shows desktop items from those folders. If profile mapping is wrong or a temporary profile is loaded, users may not see expected icons. This matters because users lose quick access to legal workflow tools and support volume rises quickly.
 
@@ -191,8 +196,8 @@ Target rollback time: under 3 minutes.
 - If fail: block final problem record closure and escalate to change manager.
 
 ## Related
-- FinalProject/runbook_floor6_missing_shortcuts_20260814.md
-- FinalProject/rca_floor6_missing_shortcuts_20260814.md
-- FinalProject/floor6_missing_shortcuts_detailed_analysis_20260814.md
-- FinalProject/floor6_missing_shortcuts_scope_only_hypothesis_20260814.md
-- FinalProject/incident_triage_floor6_missing_desktop_shortcuts.md
+- runbook_floor6_missing_shortcuts_20260814.md
+- rca_floor6_missing_shortcuts_20260814.md
+- floor6_missing_shortcuts_detailed_analysis_20260814.md
+- floor6_missing_shortcuts_scope_only_hypothesis_20260814.md
+- incident_triage_floor6_missing_desktop_shortcuts.md

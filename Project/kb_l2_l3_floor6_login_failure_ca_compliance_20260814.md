@@ -4,6 +4,11 @@ Version: v 1.0
 Date: 14/08/2026  
 Status: Draft
 
+## Runbook Source Of Truth
+- Source runbook: runbook_floor6_login_slow_signin_20260814.md
+- Source version: 1.0
+- Re-expression rule: This L2/L3 article is a role-specific re-expression of the same runbook flow and checks, not an independent troubleshooting path.
+
 ## Background
 Floor 6 users sign in through Microsoft Entra identity controls and device compliance checks from Intune. At sign-in time, Conditional Access policy evaluates user identity, device state, and policy rules before access is granted. This matters because any mismatch between policy requirements and device compliance can block login or cause long delays while checks are retried.
 
@@ -222,8 +227,8 @@ Pass/Fail signal: Pass only if runbook and L1 and L2-L3 KB versions are updated 
 If fail: block final incident closure and escalate to DWP engineer for documentation completion.
 
 ## Related
-- FinalProject/runbook_floor6_login_slow_signin_20260814.md
-- FinalProject/rca_floor6_login_slow_signin_20260814.md
-- FinalProject/floor6_login_slow_signin_detailed_analysis_20260814.md
-- FinalProject/incident_triage_floor6_login_and_slow_signin.md
-- FinalProject/floor6_login_scope_only_hypothesis_20260814.md
+- runbook_floor6_login_slow_signin_20260814.md
+- rca_floor6_login_slow_signin_20260814.md
+- floor6_login_slow_signin_detailed_analysis_20260814.md
+- incident_triage_floor6_login_and_slow_signin.md
+- floor6_login_scope_only_hypothesis_20260814.md
